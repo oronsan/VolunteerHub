@@ -7,6 +7,7 @@ import oauth2client
 from oauth2client import client
 from oauth2client import tools
 import base64
+import email
 
 try:
     import argparse
@@ -81,8 +82,21 @@ class Gmail(Connector):
     return results.get('messages', [])
 
   def getMessage(self,msg_id):
-    return self.service.users().messages().get(userId='me', id=msg_id,
-                                             format='full').execute()
+    msg = self.service.users().messages().get(userId='me', id=msg_id,
+                                             format='raw').execute()
+    msg_str = base64.urlsafe_b64decode(msg['raw'].encode('ASCII'))
+    return email.message_from_string(msg_str)
+
+  def getBody(self,msg):
+    messageMainType = msg.get_content_maintype()
+    if messageMainType == 'multipart':
+      for part in msg.get_payload():
+        if part.get_content_maintype() == 'text':
+          return part.get_payload()
+      return ''
+    elif messageMainType == 'text':
+      return msg.get_payload()
+    return ''
 
 def main():
     """Shows basic usage of the Sheets API.
@@ -90,7 +104,7 @@ def main():
     Creates a Sheets API service object and prints the names and majors of
     students in a sample spreadsheet:
     https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
-    
+
     sheet = Spreadsheet()
     sheet.getService()
 
@@ -108,22 +122,15 @@ def main():
     """
     gmail = Gmail()
     gmail.getService()
-    labels = gmail.getData('no-reply@accounts.google.com')
+    msg_ids = gmail.getData('no-reply@accounts.google.com')
 
-    if not labels:
+    if not msg_ids:
         print('No labels found.')
     else:
       print('Labels:')
-      for label in labels:
-        msg = gmail.getMessage(label['id'])
-#        print(msg)
-#        print(base64.b64decode(msg['payload']['body'][:-3]))
-        for part in msg['payload']['parts']:
-          print (base64.b64decode(part['body']['data'][:-1]))
-#        for key in msg['payload']:
-#          print(key)
-        exit()
-
+      for msg_id in msg_ids:
+        msg = gmail.getMessage(msg_id['id'])
+        print(base64.b64decode(gmail.getBody(msg)))
 
 if __name__ == '__main__':
     main()
